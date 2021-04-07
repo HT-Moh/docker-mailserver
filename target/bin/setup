@@ -1,0 +1,192 @@
+#! /bin/bash
+
+# TODO re-write setup.sh to work inside the container
+
+# version   v0.1.0 unstable
+# executed  inside the container by the CRI
+# task      wrapper for various setup scripts
+
+SCRIPT='setup.sh'
+
+WHITE="\e[37m"
+RED="\e[31m"
+PURPLE="\e[35m"
+YELLOW="\e[93m"
+ORANGE="\e[38;5;214m"
+CYAN="\e[96m"
+BLUE="\e[34m"
+LBLUE="\e[94m"
+BOLD="\e[1m"
+RESET="\e[0m"
+
+set -euEo pipefail
+trap '__log_err "${FUNCNAME[0]:-?}" "${BASH_COMMAND:-?}" "${LINENO:-?}" "${?:-?}"' ERR
+trap '_unset_vars || :' EXIT
+
+function __log_err
+{
+  printf "\n––– ${BOLD}${RED}UNCHECKED ERROR${RESET}\n%s\n%s\n%s\n%s\n\n" \
+    "  – script    = ${SCRIPT:-${0}}" \
+    "  – function  = ${1} / ${2}" \
+    "  – line      = ${3}" \
+    "  – exit code = ${4}" >&2
+}
+
+function _get_current_directory
+{
+  if dirname "$(readlink -f "${0}")" &>/dev/null
+  then
+    CDIR="$(dirname "$(readlink -f "${0}")")"
+  elif realpath -e -L "${0}" &>/dev/null
+  then
+    CDIR="$(realpath -e -L "${0}")"
+    CDIR="${CDIR%/setup.sh}"
+  fi
+}
+
+CDIR="$(pwd)"
+_get_current_directory
+
+CRI=
+INFO=
+IMAGE_NAME=
+CONTAINER_NAME=
+DEFAULT_CONFIG_PATH="${CDIR}/config"
+USE_CONTAINER=false
+WISHED_CONFIG_PATH=
+CONFIG_PATH=
+VOLUME=
+USE_TTY=
+USING_SELINUX=
+
+# ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# ? << Initial setup
+# ––
+# ? >> Usage section
+# ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+function _usage
+{
+  # shellcheck disable=SC2059
+  printf "${PURPLE}SETUP${RED}(${YELLOW}1${RED})
+
+${ORANGE}NAME${RESET}
+    ${SCRIPT:-${0}} - docker-mailserver administration script
+
+${ORANGE}SYNOPSIS${RESET}
+    ./${SCRIPT:-${0}} [ OPTIONS${RED}...${RESET} ] COMMAND [ help ${RED}|${RESET} ARGUMENTS${RED}...${RESET} ]
+
+    COMMAND ${RED}:=${RESET} { email ${RED}|${RESET} alias ${RED}|${RESET} quota ${RED}|${RESET} config ${RED}|${RESET} relay ${RED}|${RESET} debug } SUBCOMMAND
+
+${ORANGE}DESCRIPTION${RESET}
+    This is the main administration script that you use for all interactions with your
+    mail server. Setup, configuration and much more is done with this script.
+
+    Please note that the script executes most of the commands inside the container itself.
+    If the image was not found, this script will pull the ${WHITE}:latest${RESET} tag of
+    ${WHITE}mailserver/docker-mailserver${RESET}. This tag refers to the latest release,
+    see the tagging convention in the README under
+    ${BLUE}https://github.com/docker-mailserver/docker-mailserver/blob/master/README.md${RESET}
+
+    You will be able to see detailed information about the script you're invoking and
+    its arguments by appending ${WHITE}help${RESET} after your command. Currently, this
+    does not work with all scripts.
+
+${ORANGE}VERSION${RESET}
+    The current version of this script is backwards compatible with versions of
+    ${WHITE}docker-mailserver${RESET} ${BOLD}after${RESET} ${BLUE}8.0.1${RESET}. In case that there is not a more recent release,
+    this script is currently only working with the ${WHITE}:edge${RESET} tag.
+
+    You can download the script for your release by substituting TAG from the
+    following URL, where TAG looks like 'vX.X.X':
+    https://raw.githubusercontent.com/docker-mailserver/docker-mailserver/TAG/setup.sh
+
+${ORANGE}OPTIONS${RESET}
+    ${LBLUE}Config path, container or image adjustments${RESET}
+        -i IMAGE_NAME
+            Provides the name of the docker-mailserver image. The default value is
+            ${WHITE}docker.io/mailserver/docker-mailserver:latest${RESET}
+
+        -c CONTAINER_NAME
+            Provides the name of the running container.
+
+        -p PATH
+            Provides the config folder path. The default is
+            ${WHITE}${CDIR}/config/${RESET}
+
+    ${LBLUE}SELinux${RESET}
+        -z
+            Allows container access to the bind mount content that is shared among
+            multiple containers on a SELinux-enabled host.
+
+        -Z
+            Allows container access to the bind mount content that is private and
+            unshared with other containers on a SELinux-enabled host.
+
+${RED}[${ORANGE}SUB${RED}]${ORANGE}COMMANDS${RESET}
+    ${LBLUE}COMMAND${RESET} email ${RED}:=${RESET}
+        ${0} email add <EMAIL ADDRESS> [<PASSWORD>]
+        ${0} email update <EMAIL ADDRESS> [<PASSWORD>]
+        ${0} email del [ OPTIONS${RED}...${RESET} ] <EMAIL ADDRESS> [ <EMAIL ADDRESS>${RED}...${RESET} ]
+        ${0} email restrict <add${RED}|${RESET}del${RED}|${RESET}list> <send${RED}|${RESET}receive> [<EMAIL ADDRESS>]
+        ${0} email list
+
+    ${LBLUE}COMMAND${RESET} alias ${RED}:=${RESET}
+        ${0} alias add <EMAIL ADDRESS> <RECIPIENT>
+        ${0} alias del <EMAIL ADDRESS> <RECIPIENT>
+        ${0} alias list
+
+    ${LBLUE}COMMAND${RESET} quota ${RED}:=${RESET}
+        ${0} quota set <EMAIL ADDRESS> [<QUOTA>]
+        ${0} quota del <EMAIL ADDRESS>
+
+    ${LBLUE}COMMAND${RESET} config ${RED}:=${RESET}
+        ${0} config dkim [ ARGUMENTS${RED}...${RESET} ]
+        ${0} config ssl <FQDN> (${CYAN}ATTENTION${RESET}: This is deprecated and will be removed soon.)
+
+    ${LBLUE}COMMAND${RESET} relay ${RED}:=${RESET}
+        ${0} relay add-domain <DOMAIN> <HOST> [<PORT>]
+        ${0} relay add-auth <DOMAIN> <USERNAME> [<PASSWORD>]
+        ${0} relay exclude-domain <DOMAIN>
+
+    ${LBLUE}COMMAND${RESET} debug ${RED}:=${RESET}
+        ${0} debug fetchmail
+        ${0} debug fail2ban [unban <IP>]
+        ${0} debug show-mail-logs
+        ${0} debug inspect
+        ${0} debug login <COMMANDS>
+
+${ORANGE}EXAMPLES${RESET}
+    ${WHITE}./setup.sh email add test@domain.tld${RESET}
+        Add the email account ${WHITE}test@domain.tld${RESET}. You will be prompted
+        to input a password afterwards since no password was supplied.
+
+    ${WHITE}./setup.sh config dkim keysize 2048 domain 'whoami.com,whoareyou.org'${RESET}
+        Creates keys of length 2048 but in an LDAP setup where domains are not known to
+        Postfix by default, so you need to provide them yourself in a comma-separated list.
+
+    ${WHITE}./setup.sh config dkim help${RESET}
+        This will provide you with a detailed explanation on how to use the ${WHITE}
+        config dkim${RESET} command, showing what arguments can be passed and what they do.
+
+${ORANGE}EXIT STATUS${RESET}
+    Exit status is 0 if the command was successful. If there was an unexpected error, an error
+    message is shown describing the error. In case of an error, the script will exit with exit
+    status 1.
+
+"
+}
+
+# ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# ? << Usage section
+# ––
+# ? >> TODO
+# ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+function _main
+{
+    :
+}
+
+_main "${@}"
+

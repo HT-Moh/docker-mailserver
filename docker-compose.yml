@@ -6,6 +6,7 @@ services:
     hostname: crypto-catalyst
     domainname: email.crypto-catalyst.com
     container_name: ccmailserver
+    SELINUX_LABEL: ccms
     env_file: mailserver.env
     # To avoid conflicts with yaml base-60 float, DO NOT remove the quotation marks.
     # More information about the mailserver ports:

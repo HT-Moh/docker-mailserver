@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   mailserver:
-    image: docker.io/mailserver/docker-mailserver:latest
+    image: docker-mailserver
     hostname: crypto-catalyst
     domainname: email.crypto-catalyst.com
     container_name: ccmailserver

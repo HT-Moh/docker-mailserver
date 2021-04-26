@@ -1,4 +1,4 @@
-name: Buld image and push
+name: Build image and push
 
 on:
   push:

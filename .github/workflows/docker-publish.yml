@@ -2,13 +2,17 @@ name: Build image and push
 
 on:
   push:
-    # Publish `main` as Docker `latest` image.
     branches:
       - master
-
-    # Publish `v1.2.3` tags as releases.
+      - stable
+    paths:
+      - 'target/**'
+      - '.dockerignore'
+      - '.gitmodules'
+      - 'Dockerfile'
+      - 'setup.sh'
     tags:
-      - v*
+      - '*.*.*'
 
   # Run tests for any PRs.
   pull_request:

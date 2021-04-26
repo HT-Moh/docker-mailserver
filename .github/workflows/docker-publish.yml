@@ -4,12 +4,12 @@ on:
   push:
     branches:
       - master
-    paths:
-      - target/**'
-      - '.dockerignore'
-      - '.gitmodules'
-      - 'Dockerfile'
-      - 'setup.sh'
+    # paths:
+    #   - target/**'
+    #   - '.dockerignore'
+    #   - '.gitmodules'
+    #   - 'Dockerfile'
+    #   - 'setup.sh'
     tags:
       - v*
 

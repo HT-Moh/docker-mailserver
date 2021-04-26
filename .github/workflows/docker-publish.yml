@@ -5,13 +5,13 @@ on:
     branches:
       - master
     paths:
-      - 'target/**'
+      - target/**'
       - '.dockerignore'
       - '.gitmodules'
       - 'Dockerfile'
       - 'setup.sh'
     tags:
-      - '*.*.*'
+      - v*
 
   # Run tests for any PRs.
   pull_request:
